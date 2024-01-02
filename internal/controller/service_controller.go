@@ -162,6 +162,7 @@ func (r *ServiceReconciler) buildEndpoints(ctx context.Context, svc *corev1.Serv
 		for _, epp := range es.Ports {
 			if (epp.Name != nil && svcPort.Name == *epp.Name) || (epp.Name == nil && svcPort.Name == "") {
 				epPort = &epp
+				break
 			}
 		}
 		if epPort == nil {
