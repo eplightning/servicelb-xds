@@ -151,6 +151,22 @@ func (g *ServiceGraph) makeListeners() []*listenerv3.Listener {
 						},
 					},
 				},
+				AdditionalAddresses: []*listenerv3.AdditionalAddress{
+					{
+						Address: &corev3.Address{
+							Address: &corev3.Address_SocketAddress{
+								SocketAddress: &corev3.SocketAddress{
+									Address: "0.0.0.0",
+									PortSpecifier: &corev3.SocketAddress_PortValue{
+										PortValue: uint32(svcPort.Port),
+									},
+									Protocol: protocol,
+								},
+							},
+						},
+						SocketOptions: &corev3.SocketOptionsOverride{},
+					},
+				},
 			}
 
 			if svcPort.Protocol == net.TCP {
@@ -168,6 +184,7 @@ func (g *ServiceGraph) makeListeners() []*listenerv3.Listener {
 				}
 
 				listener.SocketOptions = tcpSocketOptions()
+				listener.AdditionalAddresses[0].SocketOptions.SocketOptions = tcpSocketOptions()
 			} else {
 				listener.ListenerFilters = []*listenerv3.ListenerFilter{
 					{
