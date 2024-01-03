@@ -1,4 +1,4 @@
-package internal
+package graph
 
 import (
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -27,10 +27,10 @@ func envoyLBEndpoint(addr *corev3.Address) *endpointv3.LbEndpoint {
 	}
 }
 
-// EnvoyEndpoints returns a slice of LocalityLbEndpoints.
+// envoyEndpoints returns a slice of LocalityLbEndpoints.
 // The slice contains one entry, with one LbEndpoint per
 // *envoy_core_v3.Address supplied.
-func EnvoyEndpoints(addrs ...*corev3.Address) []*endpointv3.LocalityLbEndpoints {
+func envoyEndpoints(addrs ...*corev3.Address) []*endpointv3.LocalityLbEndpoints {
 	lbendpoints := make([]*endpointv3.LbEndpoint, 0, len(addrs))
 	for _, addr := range addrs {
 		lbendpoints = append(lbendpoints, envoyLBEndpoint(addr))

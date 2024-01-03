@@ -20,9 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	"github.com/eplightning/servicelb-xds/internal"
+	"github.com/eplightning/servicelb-xds/internal/graph"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,10 +42,10 @@ import (
 
 const (
 	proxyProtocolAnnotation = "servicelb-xds.eplight.org/use-proxy-protocol"
+	idleTimeoutAnnotation   = "servicelb-xds.eplight.org/idle-timeout"
 )
 
 var (
-	portConflictError       = errors.New("service port conflict")
 	noValidNodeAddressError = errors.New("no valid node address found")
 )
 
@@ -54,13 +53,13 @@ var (
 type ServiceReconciler struct {
 	client.Client
 	scheme   *runtime.Scheme
-	graph    *internal.ServiceGraph
+	graph    *graph.ServiceGraph
 	config   *internal.Config
 	recorder record.EventRecorder
 }
 
 func NewServiceReconciler(
-	c client.Client, scheme *runtime.Scheme, recorder record.EventRecorder, graph *internal.ServiceGraph, config *internal.Config,
+	c client.Client, scheme *runtime.Scheme, recorder record.EventRecorder, graph *graph.ServiceGraph, config *internal.Config,
 ) *ServiceReconciler {
 	return &ServiceReconciler{
 		Client:   c,
@@ -106,7 +105,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	ports := r.getServicePorts(&svc)
 	for _, port := range ports {
 		if r.graph.Conflicts(req.NamespacedName, port) {
-			r.recorder.Eventf(&svc, "Warning", "Conflict", "Service cannot be allocated due to conflicting port %v", port.String())
+			r.recorder.Eventf(&svc, "Warning", "Conflict", "Service could not be allocated due to a conflicting port %v", port.String())
 
 			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 		}
@@ -134,7 +133,7 @@ func (r *ServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *ServiceReconciler) buildEndpoints(ctx context.Context, svc *corev1.Service, port internal.ServicePort) ([]*endpointv3.LocalityLbEndpoints, error) {
+func (r *ServiceReconciler) buildEndpoints(ctx context.Context, svc *corev1.Service, port graph.ServicePort) ([]graph.ServiceEndpoint, error) {
 	var svcPort *corev1.ServicePort
 	for _, sp := range svc.Spec.Ports {
 		if sp.Port == port.Port && string(sp.Protocol) == string(port.Protocol) {
@@ -154,7 +153,8 @@ func (r *ServiceReconciler) buildEndpoints(ctx context.Context, svc *corev1.Serv
 	ips := make(map[netip.AddrPort]bool)
 
 	for _, es := range esList.Items {
-		if es.AddressType != r.config.AddressType {
+		if !((es.AddressType == discoveryv1.AddressTypeIPv6 && r.config.UseIPv6Endpoints) ||
+			(es.AddressType == discoveryv1.AddressTypeIPv4 && !r.config.UseIPv6Endpoints)) {
 			continue
 		}
 
@@ -185,7 +185,7 @@ func (r *ServiceReconciler) buildEndpoints(ctx context.Context, svc *corev1.Serv
 				ready = *ep.Conditions.Ready
 			}
 
-			if r.config.UseNodeAddresses {
+			if r.config.AddressSource == internal.AddressSourceNode {
 				if ep.NodeName != nil && svcPort.NodePort != 0 {
 					ip, err := r.getNodeAddress(ctx, *ep.NodeName)
 					if err != nil {
@@ -219,37 +219,46 @@ func (r *ServiceReconciler) buildEndpoints(ctx context.Context, svc *corev1.Serv
 		return ipList[i].Addr().Less(ipList[j].Addr())
 	})
 
-	var addresses []*corev3.Address
-
-	protocol := corev3.SocketAddress_TCP
-	if port.Protocol == net.UDP {
-		protocol = corev3.SocketAddress_UDP
-	}
+	var endpoints []graph.ServiceEndpoint
 
 	for _, ip := range ipList {
-		addresses = append(addresses, &corev3.Address{
-			Address: &corev3.Address_SocketAddress{
-				SocketAddress: &corev3.SocketAddress{
-					Address: ip.Addr().String(),
-					PortSpecifier: &corev3.SocketAddress_PortValue{
-						PortValue: uint32(ip.Port()),
-					},
-					Protocol: protocol,
-				},
-			},
+		endpoints = append(endpoints, graph.ServiceEndpoint{
+			AddrPort: ip,
+			Protocol: port.Protocol,
 		})
 	}
 
-	return internal.EnvoyEndpoints(addresses...), nil
+	return endpoints, nil
 }
 
-func (r *ServiceReconciler) buildServiceData(ctx context.Context, svc *corev1.Service, ports []internal.ServicePort) (*internal.ServiceData, error) {
+func (r *ServiceReconciler) buildServiceData(ctx context.Context, svc *corev1.Service, ports []graph.ServicePort) (*graph.ServiceData, error) {
 	var useProxyProtocol bool
 	if svc.Annotations[proxyProtocolAnnotation] == "true" {
 		useProxyProtocol = true
 	}
 
-	data := internal.NewServiceData()
+	var idleTimeout *time.Duration
+	if svc.Annotations[idleTimeoutAnnotation] != "" {
+		dur, err := time.ParseDuration(svc.Annotations[idleTimeoutAnnotation])
+		if err != nil {
+			return nil, err
+		}
+		idleTimeout = &dur
+	}
+
+	var allowedIPRanges []netip.Prefix
+	if len(svc.Spec.LoadBalancerSourceRanges) > 0 {
+		for _, ip := range svc.Spec.LoadBalancerSourceRanges {
+			prefix, err := netip.ParsePrefix(ip)
+			if err != nil {
+				return nil, err
+			}
+
+			allowedIPRanges = append(allowedIPRanges, prefix)
+		}
+	}
+
+	data := graph.NewServiceData()
 
 	for _, port := range ports {
 		endpoints, err := r.buildEndpoints(ctx, svc, port)
@@ -257,9 +266,11 @@ func (r *ServiceReconciler) buildServiceData(ctx context.Context, svc *corev1.Se
 			return nil, err
 		}
 
-		data.Ports[port] = internal.ServicePortData{
+		data.Ports[port] = graph.ServicePortData{
 			Endpoints:        endpoints,
 			UseProxyProtocol: useProxyProtocol,
+			IdleTimeout:      idleTimeout,
+			AllowedIPRanges:  allowedIPRanges,
 		}
 	}
 
@@ -298,9 +309,9 @@ func (r *ServiceReconciler) getNodeAddress(ctx context.Context, nodeName string)
 			continue
 		}
 
-		if r.config.AddressType == discoveryv1.AddressTypeIPv6 && ip.Is6() {
+		if r.config.UseIPv6Endpoints && ip.Is6() {
 			return &ip, nil
-		} else if r.config.AddressType == discoveryv1.AddressTypeIPv4 && ip.Is4() {
+		} else if !r.config.UseIPv6Endpoints && ip.Is4() {
 			return &ip, nil
 		}
 	}
@@ -308,17 +319,17 @@ func (r *ServiceReconciler) getNodeAddress(ctx context.Context, nodeName string)
 	return nil, noValidNodeAddressError
 }
 
-func (r *ServiceReconciler) getServicePorts(svc *corev1.Service) []internal.ServicePort {
-	var ports []internal.ServicePort
+func (r *ServiceReconciler) getServicePorts(svc *corev1.Service) []graph.ServicePort {
+	var ports []graph.ServicePort
 
 	for _, port := range svc.Spec.Ports {
 		if port.Protocol == corev1.ProtocolTCP {
-			ports = append(ports, internal.ServicePort{
+			ports = append(ports, graph.ServicePort{
 				Port:     port.Port,
 				Protocol: net.TCP,
 			})
 		} else if port.Protocol == corev1.ProtocolUDP {
-			ports = append(ports, internal.ServicePort{
+			ports = append(ports, graph.ServicePort{
 				Port:     port.Port,
 				Protocol: net.UDP,
 			})
@@ -333,14 +344,13 @@ func (r *ServiceReconciler) shouldManage(svc *corev1.Service) bool {
 		return false
 	}
 
+	var svcClass string
 	if svc.Spec.LoadBalancerClass != nil {
-		if r.config.LBClass != *svc.Spec.LoadBalancerClass {
-			return false
-		}
-	} else {
-		if r.config.LBClass != "" {
-			return false
-		}
+		svcClass = *svc.Spec.LoadBalancerClass
+	}
+
+	if svcClass != r.config.LoadBalancerClass {
+		return false
 	}
 
 	return true

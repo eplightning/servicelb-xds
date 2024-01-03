@@ -17,15 +17,10 @@ limitations under the License.
 package main
 
 import (
-	"context"
-	"flag"
 	"github.com/eplightning/servicelb-xds/internal"
-	v1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
-	"net"
+	"github.com/eplightning/servicelb-xds/internal/graph"
+	"github.com/eplightning/servicelb-xds/internal/xds"
 	"os"
-	"strings"
-
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -54,73 +49,22 @@ func init() {
 }
 
 func main() {
-	var config internal.Config
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	var preferIPv6 bool
-	var nodeAddressType string
-	var ingressStatus string
+	config, opts := internal.ParseConfig()
 
-	var xdsAddr string
+	logger := zap.New(zap.UseFlagOptions(&opts))
+	ctrl.SetLogger(logger)
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&preferIPv6, "use-ipv6-endpoints", false, "Use IPv6 endpoints instead of IPv4")
-	flag.StringVar(&config.LBClass, "load-balancer-class", "", "Load balancer class of services to manage")
-	flag.BoolVar(&config.UseNodeAddresses, "use-node-addresses", false, "Use node addresses instead of pod addresses")
-	flag.StringVar(&nodeAddressType, "node-address-type", "ExternalIP", "Which node addresses to use when use-node-addresses=true")
-	flag.StringVar(&ingressStatus, "ingress-status", "", "Addresses to use for loadbalancer status")
-
-	flag.StringVar(&xdsAddr, "xds-bind-address", ":50051", "The address the xDS endpoint binds to")
-
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
-
-	if preferIPv6 {
-		config.AddressType = discoveryv1.AddressTypeIPv6
-	} else {
-		config.AddressType = discoveryv1.AddressTypeIPv4
-	}
-
-	config.NodeAddressType = v1.NodeAddressType(nodeAddressType)
-
-	for _, addr := range strings.Split(ingressStatus, ",") {
-		addrTrim := strings.TrimSpace(addr)
-
-		if addrTrim != "" {
-			ip := net.ParseIP(addrTrim)
-			if ip != nil {
-				config.IngressStatus = append(config.IngressStatus, internal.IngressStatusAddress{
-					IP: ip,
-				})
-			} else {
-				config.IngressStatus = append(config.IngressStatus, internal.IngressStatusAddress{
-					Hostname: addrTrim,
-				})
-			}
-		}
-	}
-
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	graph := internal.NewServiceGraph()
-	xds := internal.NewXDSServer(graph.GetCache(), internal.XDSOptions{
-		Address: xdsAddr,
+	svcGraph := graph.NewServiceGraph(config, logger)
+	xdsSrv := xds.NewXDSServer(logger, svcGraph.GetCache(), xds.XDSOptions{
+		Address: config.XDSAddr,
 	})
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                        scheme,
-		Metrics:                       metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress:        probeAddr,
-		LeaderElection:                enableLeaderElection,
-		LeaderElectionID:              "062fbd79.eplight.org",
+		Metrics:                       metricsserver.Options{BindAddress: config.MetricsAddr},
+		HealthProbeBindAddress:        config.HealthAddr,
+		LeaderElection:                config.EnableLeaderElection,
+		LeaderElectionID:              config.LeaderElectionID,
 		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
@@ -129,7 +73,7 @@ func main() {
 	}
 
 	svcReconciler := controller.NewServiceReconciler(
-		mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("servicelb-xds"), graph, &config,
+		mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("servicelb-xds"), svcGraph, config,
 	)
 
 	if err = svcReconciler.SetupWithManager(mgr); err != nil {
@@ -147,20 +91,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	signalCtx := ctrl.SetupSignalHandler()
-	cancelCtx, cancel := context.WithCancel(signalCtx)
+	supervisor := internal.NewSupervisor(mgr, xdsSrv, svcGraph)
 
-	go func() {
-		if err := xds.Serve(signalCtx); err != nil {
-			setupLog.Error(err, "problem running xDS server")
-		}
-
-		cancel()
-	}()
-
-	setupLog.Info("starting manager")
-	if err := mgr.Start(cancelCtx); err != nil {
-		setupLog.Error(err, "problem running manager")
+	setupLog.Info("starting supervisor")
+	if err := supervisor.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "service failed")
 		os.Exit(1)
 	}
 }

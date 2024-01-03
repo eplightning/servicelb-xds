@@ -1,9 +1,10 @@
-package internal
+package xds
 
 import (
 	"context"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	xds "github.com/envoyproxy/go-control-plane/pkg/server/v3"
+	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	"net"
@@ -32,16 +33,18 @@ type XDSServer struct {
 	options       XDSOptions
 	snapshotCache cache.SnapshotCache
 	lis           net.Listener
+	l             logr.Logger
 }
 
-func NewXDSServer(snapshotCache cache.SnapshotCache, options XDSOptions) *XDSServer {
+func NewXDSServer(logger logr.Logger, snapshotCache cache.SnapshotCache, options XDSOptions) *XDSServer {
 	return &XDSServer{
 		snapshotCache: snapshotCache,
 		options:       options,
+		l:             logger,
 	}
 }
 
-func (srv *XDSServer) Serve(ctx context.Context) error {
+func (srv *XDSServer) Start(ctx context.Context) error {
 	// gRPC golang library sets a very small upper bound for the number gRPC/h2
 	// streams over a single TCP connection. If a proxy multiplexes requests over
 	// a single connection to the management server, then it might lead to
@@ -76,8 +79,12 @@ func (srv *XDSServer) Serve(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+
+		srv.l.Info("XDS server stopping")
 		srv.grpcServer.GracefulStop()
 	}()
+
+	srv.l.Info("XDS server listening", "addr", srv.options.Address)
 
 	return srv.grpcServer.Serve(srv.lis)
 }
