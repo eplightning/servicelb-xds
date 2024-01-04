@@ -36,9 +36,6 @@ type Config struct {
 	IngressStatus    []IngressStatusAddress
 	AddressSource    AddressSource
 	NodeAddressType  corev1.NodeAddressType
-
-	// deprecated: xx
-	UseNodeAddresses bool
 }
 
 func ParseConfig() (*Config, zap.Options) {

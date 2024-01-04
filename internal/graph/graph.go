@@ -7,6 +7,7 @@ import (
 	"github.com/eplightning/servicelb-xds/internal"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type ServiceGraph struct {
 	data    *graphData
 	version int64
 	sc      cache.SnapshotCache
+	mut     sync.Mutex
 
 	closed   bool
 	signalCh chan interface{}
@@ -64,6 +66,9 @@ func (g *ServiceGraph) GetCache() cache.SnapshotCache {
 }
 
 func (g *ServiceGraph) RemoveService(name types.NamespacedName) {
+	g.mut.Lock()
+	defer g.mut.Unlock()
+
 	if _, ok := g.data.services[name]; ok {
 		delete(g.data.services, name)
 		g.notify()
@@ -71,11 +76,17 @@ func (g *ServiceGraph) RemoveService(name types.NamespacedName) {
 }
 
 func (g *ServiceGraph) UpdateService(name types.NamespacedName, data *ServiceData) {
+	g.mut.Lock()
+	defer g.mut.Unlock()
+
 	g.data.services[name] = data
 	g.notify()
 }
 
 func (g *ServiceGraph) Conflicts(name types.NamespacedName, port ServicePort) bool {
+	g.mut.Lock()
+	defer g.mut.Unlock()
+
 	for svc, data := range g.data.services {
 		if name.Name == svc.Name && name.Namespace == svc.Namespace {
 			continue
@@ -103,6 +114,9 @@ func (g *ServiceGraph) notify() {
 }
 
 func (g *ServiceGraph) newSnapshot() {
+	g.mut.Lock()
+	defer g.mut.Unlock()
+
 	g.version++
 
 	snapshot, err := cache.NewSnapshot(fmt.Sprintf("%v", g.version), buildSnapshotData(g.config, g.data))
