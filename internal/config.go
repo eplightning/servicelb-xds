@@ -68,6 +68,12 @@ func ParseConfig() (*Config, zap.Options) {
 	flag.StringVar(&addressSource, "address-source", "endpoint", "What to use as a source for endpoint addresses (node or endpoint)")
 	flag.StringVar(&nodeAddressType, "node-address-type", "ExternalIP", "Which node address type to use for EDS")
 
+	opts := zap.Options{
+		Development: devel,
+	}
+	opts.BindFlags(flag.CommandLine)
+	flag.Parse()
+
 	for _, addr := range strings.Split(ingressStatus, ",") {
 		addrTrim := strings.TrimSpace(addr)
 
@@ -93,12 +99,6 @@ func ParseConfig() (*Config, zap.Options) {
 	} else {
 		config.LeaderElectionID = "062fbd79.eplight.org"
 	}
-
-	opts := zap.Options{
-		Development: devel,
-	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
 
 	return config, opts
 }

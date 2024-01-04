@@ -48,8 +48,8 @@ func (g *ServiceGraph) Start(ctx context.Context) error {
 	}()
 
 	for {
-		_, closed := <-g.signalCh
-		if closed {
+		_, ok := <-g.signalCh
+		if !ok {
 			return nil
 		}
 

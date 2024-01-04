@@ -28,7 +28,6 @@ func (s *Supervisor) Add(svc SupervisedService) *Supervisor {
 func (s *Supervisor) Start(ctx context.Context) error {
 	var wg sync.WaitGroup
 	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	errCh := make(chan error, len(s.services))
 
@@ -41,6 +40,7 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	}
 
 	firstErr := <-errCh
+	cancel()
 	wg.Wait()
 
 	return firstErr
