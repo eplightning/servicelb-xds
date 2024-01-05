@@ -14,7 +14,7 @@ Suitable for situations when MetalLB is not viable due to environment's limitati
  - Listeners are dual-stack while endpoints are single-stack (IPv4 or IPv6)
  - TCP and UDP services supported
  - Client IP preservation via PROXY protocol
- - Customizable idle timeout for downstream connections
+ - Customizable idle timeout
  - IP filtering supported via loadBalancerSourceRanges field
 ## Installation
 
