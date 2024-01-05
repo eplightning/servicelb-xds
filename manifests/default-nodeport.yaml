@@ -231,7 +231,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: ghcr.io/eplightning/xds:v0.2.0
+        image: ghcr.io/eplightning/xds-servicelb:v0.2.0
         livenessProbe:
           httpGet:
             path: /healthz
