@@ -1,9 +1,10 @@
 namespace: xds-servicelb
 namePrefix: xds-servicelb-
 resources:
+  - nodeport.yaml
   - ../rbac
   - ../manager
 #  - ../prometheus
 
 patches:
-#  - path: manager_auth_proxy_patch.yaml
+#  - path: ../default/manager_auth_proxy_patch.yaml

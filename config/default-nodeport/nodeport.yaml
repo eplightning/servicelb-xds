@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: xds
+    app.kubernetes.io/created-by: xds-servicelb
+    app.kubernetes.io/instance: controller-manager-xds-service
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: service
+    app.kubernetes.io/part-of: xds-servicelb
+    control-plane: controller-manager
+  name: xds
+  namespace: system
+spec:
+  type: NodePort
+  ports:
+    - name: xds
+      port: 50051
+      protocol: TCP
+      targetPort: 50051
+      nodePort: 32051
+  selector:
+    control-plane: controller-manager

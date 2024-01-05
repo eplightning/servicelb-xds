@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
-	"github.com/eplightning/servicelb-xds/internal"
+	"github.com/eplightning/xds-servicelb/internal"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
 	"sync"

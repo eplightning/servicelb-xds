@@ -17,10 +17,11 @@ limitations under the License.
 package main
 
 import (
-	"github.com/eplightning/servicelb-xds/internal"
-	"github.com/eplightning/servicelb-xds/internal/graph"
-	"github.com/eplightning/servicelb-xds/internal/xds"
+	"github.com/eplightning/xds-servicelb/internal"
+	"github.com/eplightning/xds-servicelb/internal/graph"
+	"github.com/eplightning/xds-servicelb/internal/xds"
 	"os"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -33,7 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/eplightning/servicelb-xds/internal/controller"
+	"github.com/eplightning/xds-servicelb/internal/controller"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -73,7 +74,7 @@ func main() {
 	}
 
 	svcReconciler := controller.NewServiceReconciler(
-		mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("servicelb-xds"), svcGraph, config,
+		mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor("xds-servicelb"), svcGraph, config,
 	)
 
 	if err = svcReconciler.SetupWithManager(mgr); err != nil {

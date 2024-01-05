@@ -1,91 +1,101 @@
-# xds
-// TODO(user): Add simple overview of use/purpose
+# xds-servicelb
+
+Implementation of Kubernetes LoadBalancer services using xDS protocol.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
 
-## Getting Started
+This controller allows you to provide load-balancing services to any Kubernetes cluster via external xDS load-balancers (such as Envoy).
+Suitable for situations when MetalLB is not viable due to environment's limitations etc.
 
-### Prerequisites
-- go version v1.20.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+## Features
+ 
+ - Exposes Kubernetes Type=LoadBalancer services via an xDS (LDS, CDS and EDS) endpoint
+ - Returned endpoint addresses can be either pod or node IP (via nodePort)
+ - Listeners are dual-stack while endpoints are single-stack (IPv4 or IPv6)
+ - TCP and UDP services supported
+ - Client IP preservation via PROXY protocol
+ - Customizable idle timeout for downstream connections
+ - IP filtering supported via loadBalancerSourceRanges field
+## Installation
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+If you're okay with using NodePort for exposing xDS, use `default-nodeport` variant:
 
-```sh
-make docker-build docker-push IMG=<some-registry>/xds:tag
+```
+kubectl apply -f manifests/default-nodeport.yaml
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified. 
-And it is required to have access to pull the image from the working environment. 
-Make sure you have the proper permission to the registry if the above commands don’t work.
+Otherwise you can use `default` variant and will need to expose xDS service via different means:
 
-**Install the CRDs into the cluster:**
-
-```sh
-make install
+```
+kubectl apply -f manifests/default.yaml
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+## Configuration
 
-```sh
-make deploy IMG=<some-registry>/xds:tag
+Given the nature of this controller its very likely you will need to customize flags to fit your network environment. Here's a list of options you can override:
+
+- `--xds-cluster-name=xds-servicelb` - xDS cluster name that will be used for CDS clusters, should match whatever you set in envoy's boostrap config
+- `--load-balancer-class=class` - You can restrict the controller to only manage services with specified `loadBalancerClass` spec field
+- `--use-ipv6-endpoints=true` - Use IPv6 endpoints instead of IPv4
+- `--ingress-status=ip1,ip2,host` - IPs/hostnames to use for load balancer ingress status field
+- `--address-source=endpoint|node` - What to use as a source for endpoint addresses (node or endpoint)
+- `--node-address-type=ExternalIP` - Which node addresses to use (only applicable for address-source=node)
+
+## Envoy bootstrap example
+
+To connect to the xDS server from Envoy you'll need a bootstrap configuration file. An example of basic one is provided below, make sure to fill in IP and port (for nodeport its 32051 by default).
+
+```yaml
+node:
+  id: node
+  cluster: loadbalancer
+
+admin:
+  address:
+    pipe:
+      path: /run/envoy/envoy.sock
+      mode: 0777
+
+dynamic_resources:
+  cds_config:
+    resource_api_version: V3
+    api_config_source:
+      api_type: GRPC
+      transport_api_version: V3
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: xds-servicelb
+  lds_config:
+    resource_api_version: V3
+    api_config_source:
+      api_type: GRPC
+      transport_api_version: V3
+      grpc_services:
+      - envoy_grpc:
+          cluster_name: xds-servicelb
+
+static_resources:
+  clusters:
+  - name: xds-servicelb
+    type: STATIC
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options:
+            connection_keepalive:
+              interval: 60s
+              timeout: 10s
+    load_assignment:
+      cluster_name: xds-servicelb
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                protocol: TCP
+                address: __XDS_SERVICELB_IP__
+                port_value: __XDS_SERVICELB_PORT__
+
 ```
-
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-## License
-
-Copyright 2024.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
 

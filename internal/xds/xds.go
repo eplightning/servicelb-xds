@@ -80,11 +80,11 @@ func (srv *XDSServer) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 
-		srv.l.Info("XDS server stopping")
+		srv.l.Info("xDS server stopping")
 		srv.grpcServer.GracefulStop()
 	}()
 
-	srv.l.Info("XDS server listening", "addr", srv.options.Address)
+	srv.l.Info("xDS server listening", "addr", srv.options.Address)
 
 	return srv.grpcServer.Serve(srv.lis)
 }

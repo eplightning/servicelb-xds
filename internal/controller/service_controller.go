@@ -20,8 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/eplightning/servicelb-xds/internal"
-	"github.com/eplightning/servicelb-xds/internal/graph"
+	"github.com/eplightning/xds-servicelb/internal"
+	"github.com/eplightning/xds-servicelb/internal/graph"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,8 +41,8 @@ import (
 )
 
 const (
-	proxyProtocolAnnotation = "servicelb-xds.eplight.org/use-proxy-protocol"
-	idleTimeoutAnnotation   = "servicelb-xds.eplight.org/idle-timeout"
+	proxyProtocolAnnotation = "xds-servicelb.eplight.org/use-proxy-protocol"
+	idleTimeoutAnnotation   = "xds-servicelb.eplight.org/idle-timeout"
 )
 
 var (
@@ -77,15 +77,6 @@ func NewServiceReconciler(
 //+kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Service object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 

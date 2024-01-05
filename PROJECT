@@ -5,8 +5,8 @@
 domain: eplight.org
 layout:
 - go.kubebuilder.io/v4
-projectName: xds
-repo: github.com/eplightning/servicelb-xds
+projectName: xds-servicelb
+repo: github.com/eplightning/xds-servicelb
 resources:
 - controller: true
   domain: eplight.org

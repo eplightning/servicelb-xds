@@ -5,8 +5,8 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: proxy-role
     app.kubernetes.io/component: kube-rbac-proxy
-    app.kubernetes.io/created-by: xds
-    app.kubernetes.io/part-of: xds
+    app.kubernetes.io/created-by: xds-servicelb
+    app.kubernetes.io/part-of: xds-servicelb
     app.kubernetes.io/managed-by: kustomize
   name: proxy-role
 rules:
