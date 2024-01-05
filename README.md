@@ -41,6 +41,11 @@ Given the nature of this controller its very likely you will need to customize f
 - `--address-source=endpoint|node` - What to use as a source for endpoint addresses (node or endpoint)
 - `--node-address-type=ExternalIP` - Which node addresses to use (only applicable for address-source=node)
 
+## Supported annotations
+
+- `xds-servicelb.eplight.org/use-proxy-protocol=true` - Enable PROXY protocol
+- `xds-servicelb.eplight.org/idle-timeout=5m` - Idle timeout. Will use default Envoy values if not specified (1h for TCP, 1m for UDP)
+
 ## Envoy bootstrap example
 
 To connect to the xDS server from Envoy you'll need a bootstrap configuration file. An example of basic one is provided below, make sure to fill in IP and port (for nodeport its 32051 by default).
